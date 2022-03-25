@@ -19,6 +19,14 @@ typedef struct
     callback handle;
 }thread_data;
 
+typedef struct
+{
+    uint8_t * buf;
+    size_t size;
+    int clientFd;
+}parser_data;
+
 int createServer(const int);
 int handleClients(const int, callback);
 void * thread_func(void *);
+void * print_http_data(void *);

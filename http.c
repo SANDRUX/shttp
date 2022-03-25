@@ -6,7 +6,7 @@ int createServer(const int port)
 
     if (sockFd == -1)
     {
-        fprintf(stderr, "Could not create socket");
+        fprintf(stderr, "Could not create socket\n");
         return -1;
     }
 
@@ -14,15 +14,11 @@ int createServer(const int port)
 
     if (addr == NULL)
     {
-        fprintf(stderr, "Could not allocate memory on the heap");
+        fprintf(stderr, "Could not allocate memory on the heap\n");
         return -1;
     }
 
     memset(addr, 0, sizeof(struct sockaddr_in));
-
-    int port;
-    fprintf(stdout, "Enter the port number: ");
-    fscanf(stdin, "%d", &port);
 
     addr->sin_family = AF_INET;
     addr->sin_port = htons(port);
@@ -34,9 +30,13 @@ int createServer(const int port)
 
     if (status == -1)
     {
-        fprintf(stderr, "Could not bind the socket");
+        fprintf(stderr, "Could not bind the socket\n");
         return -1;
     }
+
+    handleClients(sockFd, print_http_data);
+
+    return 0;
 }
     
 int handleClients(const int sockFd, callback client_callback)
@@ -45,7 +45,7 @@ int handleClients(const int sockFd, callback client_callback)
 
     if (status == -1)
     {
-        fprintf(stderr, "Could not make a listener socket");
+        fprintf(stderr, "Could not make a listener socket\n");
         return -1;
     }
 
@@ -55,7 +55,7 @@ int handleClients(const int sockFd, callback client_callback)
 
         if (cfd == -1)
         {
-            fprintf(stderr, "Coult not handle the client");
+            fprintf(stderr, "Coult not handle the client\n");
             return -1;
         }
         
@@ -64,28 +64,42 @@ int handleClients(const int sockFd, callback client_callback)
         data.clientFd = cfd;
         data.handle = client_callback;
 
-        pthread_t pId;
+        pthread_t tId;
 
-        if (pthread_create(&pId, NULL, thread_func, (void *)&data) != 0)
+        if (pthread_create(&tId, NULL, thread_func, (void *)&data) != 0)
         {
-            fprintf(stderr, "Could not create the thread with pid: %d", pId);
+            fprintf(stderr, "Could not create the thread with pid: %ld\n", tId);
             return -1;
         }
     }
 
     close(sockFd);
+
+    return 0;
+}
+
+void * print_http_data(void * buffer)
+{   
+    parser_data * data = (parser_data *)buffer;
+
+    for (size_t i = 0; i < data->size; i++)
+    {
+        printf("%c", data->buf[i]);
+    }
+
+    close(data->clientFd);
 }
 
 void * thread_func(void * data)
 {
     thread_data tData = *((thread_data *)data);
 
+    size_t numRead = 0;
+    size_t size = 0;
+
     uint8_t * buf = (uint8_t *)malloc(MAXIMUM_CHUNK_SIZE);
 
-    size_t numRead = 0;
-    size_t alloc_size = 0;
-
-    for (;;)
+    for (;;) 
     {
         uint8_t temp[MAXIMUM_CHUNK_SIZE];
 
@@ -93,12 +107,12 @@ void * thread_func(void * data)
 
         if (numRead > 0)
         {
-            if (alloc_size != 0)
+            if (size != 0)
             {
-                buf = (uint8_t *)realloc(buf, MAXIMUM_CHUNK_SIZE + alloc_size);
+                buf = (uint8_t *)realloc(buf, numRead + size);
             }
-            memcpy(buf + alloc_size, temp, numRead);
-            alloc_size += numRead;
+            memcpy(buf + size, temp, numRead);
+            size += numRead;
 
             continue;
         }
@@ -106,7 +120,15 @@ void * thread_func(void * data)
         break;
     }
 
-    tData.handle(buf);
+    parser_data parser_buf;
+    parser_buf.buf = (uint8_t *)malloc(size);
+    memcpy(parser_buf.buf, buf, size);
 
+    parser_buf.clientFd = tData.clientFd;
+    parser_buf.size = size;
+
+    tData.handle((void *)&parser_buf);
+
+    free(parser_buf.buf);
     free(buf);
 }
